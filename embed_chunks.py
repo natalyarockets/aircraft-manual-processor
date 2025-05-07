@@ -3,7 +3,7 @@ import json
 import time
 import numpy as np
 from tqdm import tqdm
-from supabase import create_client
+from supabase import create_client, Client
 from config import *
 
 # OpenAI
@@ -15,7 +15,8 @@ from transformers import AutoTokenizer, AutoModel
 import torch
 
 # Supabase init
-supabase = create_client(SUPABASE_VS_URL, SUPABASE_VS_KEY)
+#print(SUPABASE_VS_URL)
+supabase: Client = create_client(SUPABASE_VS_URL, SUPABASE_VS_KEY)
 
 # OpenAI init
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
@@ -80,8 +81,27 @@ def embed_with_huggingface(chunks, model_name):
 
 
 def upload_to_supabase(chunks):
-    print("Uploading to Supabase...")
+    print(f"Uploading {len(chunks)} chunks to Supabase table: {TABLE_NAME}")
     batch_size = 50
+    successful = 0
+    failed = 0
+
+    # First, try to retrieve the table structure to verify connection
+    try:
+        # This will only work if you have the right permissions - for debugging
+        print("Testing Supabase connection...")
+        response = supabase.table(TABLE_NAME).select("*").limit(1).execute()
+        print(f"Connection successful. Table exists.")
+    except Exception as e:
+        print(f"❌ Connection test failed: {str(e)}")
+        print(f"URL: {SUPABASE_VS_URL}")
+        # Don't print the actual key for security
+        print(f"Key valid: {bool(SUPABASE_VS_KEY and SUPABASE_VS_KEY.startswith('eyJ'))}")
+        
+    # Print dimensions of first embedding to verify
+    if chunks and "embedding" in chunks[0]:
+        print(f"Embedding dimensions: {len(chunks[0]['embedding'])}")
+        
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i + batch_size]
         data = []
@@ -94,36 +114,63 @@ def upload_to_supabase(chunks):
                 "aircraft_model": chunk["aircraft_model"],
                 "document_id": chunk["document_id"],
                 "system_category": chunk["system_category"],
-                "embedding_model": chunk["embedding_model"],
+                "document_type": DOCUMENT_TYPE,
                 "metadata": {
                     "token_count": chunk.get("token_count", 0)
                 }
             })
+
         try:
-            res = supabase.table("aircraft_manual").insert(data).execute()
-            print(f"Uploaded batch {i // batch_size + 1}")
+            print(f"Attempting to insert batch {i // batch_size + 1}...")
+            response = supabase.table(TABLE_NAME).insert(data).execute()
+            
+            if hasattr(response, "data") and response.data:
+                print(f"✅ Batch {i // batch_size + 1}: Inserted {len(response.data)} records")
+                successful += len(response.data)
+            else:
+                print(f"❌ Batch {i // batch_size + 1}: Insert returned no data")
+                # Try to get more details about the response
+                print(f"Response object: {response}")
+                if hasattr(response, "error"):
+                    print(f"Error: {response.error}")
+                failed += len(batch)
+                
         except Exception as e:
-            print(f"Upload failed for batch {i // batch_size + 1}: {e}")
+            print(f"🔥 Batch {i // batch_size + 1} failed with exception: {str(e)}")
+            # Print the first data item to see structure (without the full embedding)
+            if data:
+                debug_item = data[0].copy()
+                if "embedding" in debug_item:
+                    debug_item["embedding"] = f"[{len(debug_item['embedding'])} dimensions]"
+                print(f"Sample data structure: {debug_item}")
+            failed += len(batch)
+
+    print(f"\nUpload complete: {successful} chunks uploaded successfully, {failed} failed.")
+
 
 
 def main():
     print(f"Embedding model: {EMBEDDING_MODEL} ({EMBEDDING_PROVIDER})")
-    print(f"Loading chunks from: {RAW_CHUNKS_PATH}")
-    chunks = load_chunks(RAW_CHUNKS_PATH)
+    print(f"Supabase table: {TABLE_NAME}")
 
-    if EMBEDDING_PROVIDER == "openai":
-        embedded = embed_with_openai(chunks, EMBEDDING_MODEL)
-    elif EMBEDDING_PROVIDER == "huggingface":
-        embedded = embed_with_huggingface(chunks, EMBEDDING_MODEL)
+    if os.path.exists(EMBEDDED_CHUNKS_PATH):
+        print(f"🔁 Found embedded chunks at {EMBEDDED_CHUNKS_PATH}. Skipping embedding.")
+        embedded = load_chunks(EMBEDDED_CHUNKS_PATH)
     else:
-        raise ValueError(f"Unknown embedding provider: {EMBEDDING_PROVIDER}")
+        print("🧠 No embedded chunks found. Running embedding now...")
+        chunks = load_chunks(RAW_CHUNKS_PATH)
 
-    if not embedded:
-        print("No embeddings generated. Exiting.")
-        return
+        if EMBEDDING_PROVIDER == "openai":
+            embedded = embed_with_openai(chunks, EMBEDDING_MODEL)
+        elif EMBEDDING_PROVIDER == "huggingface":
+            embedded = embed_with_huggingface(chunks, EMBEDDING_MODEL)
+        else:
+            raise ValueError(f"Unknown embedding provider: {EMBEDDING_PROVIDER}")
 
-    save_embedded_chunks(embedded, EMBEDDED_CHUNKS_PATH)
+        save_embedded_chunks(embedded, EMBEDDED_CHUNKS_PATH)
+
     upload_to_supabase(embedded)
+
 
 
 if __name__ == "__main__":
