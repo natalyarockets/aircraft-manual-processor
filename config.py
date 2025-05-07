@@ -1,8 +1,24 @@
-# config.py
+import os
+from dotenv import load_dotenv
 
-#PDF_PATH = "/Users/n/Cirrus-AMM-Generator/work/SR22G5_AMM.pdf"
-PDF_PATH = "/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Manuals and documentation/SR22/SR22 vector store approved and in use/SR22 G5 POH - Perspective.pdf"
-EMBEDDING_MODEL = "text-embedding-3-small"  # Or text-embedding-3-large
-AIRCRAFT_MODEL = "SR22G5"      # e.g., "Boeing 737"
+load_dotenv()  # This reads from your .env file
 
-#Need to add variable for document_type (POH, AMM, etc.)
+# Aircraft and PDF config
+AIRCRAFT_MODEL = "SR22G5"
+PDF_PATH = f"/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Manuals and documentation/SR22/SR22 vector store approved and in use/SR22 G5 POH - Perspective.pdf"
+DOCUMENT_TYPE = "POH"  # You can change this if you want
+
+# Embedding config
+EMBEDDING_PROVIDER = "huggingface"  # or "openai"
+EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5" # or "text-embedding-3-small"
+TABLE_NAME = f"aircraft_manual_{EMBEDDING_MODEL.replace('/', '_').replace('-', '_')}"
+
+
+# Output paths
+RAW_CHUNKS_PATH = f"data/{AIRCRAFT_MODEL}/chunks_raw.json"
+EMBEDDED_CHUNKS_PATH = f"data/{AIRCRAFT_MODEL}/chunks_embedded_{EMBEDDING_MODEL.replace('/', '_')}.json"
+
+# API Keys from .env
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SUPABASE_VS_URL = os.getenv("SUPABASE_VS_URL")
+SUPABASE_VS_KEY = os.getenv("SUPABASE_VS_KEY")
