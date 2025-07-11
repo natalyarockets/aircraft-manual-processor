@@ -9,9 +9,9 @@ from supabase import create_client, Client
 from config import *
 
 # Initialize OpenAI and Supabase clients
-SUPABASE_VS_URL = os.environ.get("SUPABASE_VS_URL")
-SUPABASE_VS_KEY = os.environ.get("SUPABASE_VS_KEY")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+#SUPABASE_VS_URL = os.environ.get("SUPABASE_VS_URL")
+#SUPABASE_VS_KEY = os.environ.get("SUPABASE_VS_KEY")
+#OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 supabase: Client = create_client(SUPABASE_VS_URL, SUPABASE_VS_KEY)
 

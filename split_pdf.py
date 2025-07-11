@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from collections import defaultdict
 
-pdf_path = Path("/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Manuals and documentation/DA62/DA 62 MM.pdf")
+pdf_path = Path("/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Manuals and documentation/DA40/60201-r10-DA40-AMM-complete.pdf")
 doc = fitz.open(pdf_path)
 output_folder = pdf_path.parent / "processed"
 output_folder.mkdir(exist_ok=True)
@@ -39,7 +39,7 @@ for chapter, page_nums in sorted(pages_by_chapter.items(), key=lambda x: int(x[0
     for page_num in page_nums:
         new_doc.insert_pdf(doc, from_page=page_num, to_page=page_num)
 
-    filename = f"DA 62 AMM chapter_{chapter}.pdf"
+    filename = f"DA 40 AMM chapter_{chapter}.pdf"
     output_path = output_folder / filename
     new_doc.save(output_path)
     print(f"Saved {filename} ({len(page_nums)} pages)")
