@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 load_dotenv()  # This reads from your .env file
 
 # Aircraft and PDF config
-AIRCRAFT_MODEL = "SR22G5"
-PDF_PATH = f"/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Manuals and documentation/DA42/DA42 vector store approved and in use/DA42-NG-AMM.pdf"
-DOCUMENT_TYPE = "maintenance_manual"  # You can change this if you want
+AIRCRAFT_MODEL = "CJ3"
+PDF_PATH = f"/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Manuals and documentation/CJ3/CJ3 vector store approved and in use/AFM/CJ3-AFM.pdf"
+DOCUMENT_TYPE = "POH"  # You can change this if you want
 
 # Embedding config
 EMBEDDING_PROVIDER = "openai" # or "huggingface" 
