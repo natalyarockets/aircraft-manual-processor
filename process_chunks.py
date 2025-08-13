@@ -3,17 +3,20 @@ import re
 import fitz  # PyMuPDF
 import json
 import tiktoken
+from typing import List, Dict
 from config import AIRCRAFT_MODEL, PDF_PATH, RAW_CHUNKS_PATH
 
 # Optional: enable if/when you want to add LLM cleanup
-USE_LLM_CLEANUP = False
+USE_LLM_CLEANUP = True
 
 # Tokenizer for OpenAI-style models
 tokenizer = tiktoken.get_encoding("cl100k_base")
 
-def detect_system_category(text):
+def detect_system_category(text: str) -> str:
     text_lower = text.lower()
-    if re.search(r'hydraulic|actuator|fluid|pressure|reservoir|pump|valve|cylinder', text_lower):
+    if re.search(r'(table of contents|contents|toc\b|list of tables|list of figures|illustrations|drawings|schematic|wiring diagram)', text_lower):
+        return "Non-Content"
+    elif re.search(r'hydraulic|actuator|fluid|pressure|reservoir|pump|valve|cylinder', text_lower):
         return "Hydraulic"
     elif re.search(r'electric|circuit|voltage|wire|battery|generator|power|bus|breaker', text_lower):
         return "Electrical"
@@ -39,7 +42,7 @@ def detect_system_category(text):
         return "Operating Procedures"
     return "General"
 
-def extract_text_from_pdf(pdf_path):
+def extract_text_from_pdf(pdf_path: str) -> List[Dict]:
     print(f"Extracting text from: {pdf_path}")
     doc = fitz.open(pdf_path)
     pages = []
@@ -51,25 +54,32 @@ def extract_text_from_pdf(pdf_path):
                 "text": text.strip()
             })
         elif i % 50 == 0:
-            print(f"Warning: Page {i+1} may have minimal or no extractable content")
-    print(f"Extracted {len(pages)} pages of usable content")
+            print(f"Warning: Page {i+1} in {os.path.basename(pdf_path)} may have minimal or no extractable content")
+    print(f"Extracted {len(pages)} pages of usable content from {os.path.basename(pdf_path)}")
     return pages
 
-def chunk_text(pages_text, chunk_size=600, chunk_overlap=50):
-    print("Chunking text...")
+def llm_cleanup(text: str) -> str:
+    cleaned = text.replace("\x00", "")
+    #*Could do other things here like removing excessive whitespace, etc.
+    return cleaned
+
+def chunk_text(pages_text: List[Dict], pdf_basename: str, chunk_size: int = 600, chunk_overlap: int = 50) -> List[Dict]:
+    print(f"Chunking text for: {pdf_basename}")
     chunks = []
     for page in pages_text:
         page_number = page["page_number"]
+        # Normalize whitespace
         text = re.sub(r'\s{2,}', ' ', page["text"]).strip()
         tokens = tokenizer.encode(text)
+
         for i in range(0, len(tokens), chunk_size - chunk_overlap):
             chunk_tokens = tokens[i:i + chunk_size]
             chunk_text = tokenizer.decode(chunk_tokens)
 
-            # Optional: LLM cleanup (off by default)
             if USE_LLM_CLEANUP:
                 chunk_text = llm_cleanup(chunk_text)
 
+            # Heuristic section title
             section_title = "Unknown Section"
             title_match = re.search(r'(?:^|\n)(?:Chapter|Section|Part|Item|Task)?\s*[\d\.\-]*\s*([A-Z][^\n\.]{3,60})', chunk_text)
             if title_match:
@@ -82,18 +92,23 @@ def chunk_text(pages_text, chunk_size=600, chunk_overlap=50):
                 "page_number": page_number,
                 "section_title": section_title,
                 "aircraft_model": AIRCRAFT_MODEL,
-                "document_id": os.path.basename(PDF_PATH),
+                "document_id": pdf_basename,  # << per-file identifier
                 "system_category": system_category,
-                "token_count": len(chunk_tokens)
+                "token_count": len(chunk_tokens),
             })
-    print(f"Created {len(chunks)} chunks")
+    print(f"Created {len(chunks)} chunks for {pdf_basename}")
     return chunks
 
-# Optional cleanup stub – replace with actual call to OpenAI/GPT if needed
-def llm_cleanup(text):
-    return text  # stub for now
+def list_pdf_files(path: str) -> List[str]:
+    if os.path.isdir(path):
+        pdfs = [os.path.join(path, f) for f in os.listdir(path) if f.lower().endswith(".pdf")]
+        return sorted(pdfs)
+    elif os.path.isfile(path) and path.lower().endswith(".pdf"):
+        return [path]
+    else:
+        raise FileNotFoundError(f"No PDF or directory found at: {path}")
 
-def save_chunks(chunks, output_path):
+def save_chunks(chunks: List[Dict], output_path: str):
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(chunks, f, indent=2)
@@ -101,17 +116,36 @@ def save_chunks(chunks, output_path):
 
 def main():
     print(f"Preparing chunks for: {PDF_PATH}")
-    pages = extract_text_from_pdf(PDF_PATH)
-    if not pages:
-        print("No text found. Exiting.")
-        return
+    pdf_files = list_pdf_files(PDF_PATH)
 
-    chunks = chunk_text(pages)
-    if not chunks:
-        print("No chunks created. Exiting.")
-        return
+    # If RAW_CHUNKS_PATH ends with .json => combine all into one file
+    combine = RAW_CHUNKS_PATH.lower().endswith(".json")
 
-    save_chunks(chunks, RAW_CHUNKS_PATH)
+    all_chunks: List[Dict] = []
+    for pdf in pdf_files:
+        basename = os.path.basename(pdf)
+        pages = extract_text_from_pdf(pdf)
+        if not pages:
+            print(f"No text found in {basename}. Skipping.")
+            continue
+
+        chunks = chunk_text(pages, pdf_basename=basename)
+        if not chunks:
+            print(f"No chunks created for {basename}. Skipping.")
+            continue
+
+        if combine:
+            all_chunks.extend(chunks)
+        else:
+            # Treat RAW_CHUNKS_PATH as a folder; write per-PDF JSON
+            out_dir = RAW_CHUNKS_PATH
+            os.makedirs(out_dir, exist_ok=True)
+            out_file = os.path.join(out_dir, f"{os.path.splitext(basename)[0]}.chunks.json")
+            save_chunks(chunks, out_file)
+
+    if combine:
+        # One combined output file
+        save_chunks(all_chunks, RAW_CHUNKS_PATH)
 
 if __name__ == "__main__":
     main()

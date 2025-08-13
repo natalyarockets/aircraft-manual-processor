@@ -1,3 +1,6 @@
+#split_pdf_to_100p_chunks.py
+#This script is useful for OpenAI's vector store since it often throws up on long documents.
+
 import fitz  # PyMuPDF
 from pathlib import Path
 

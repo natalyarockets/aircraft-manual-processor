@@ -1,4 +1,5 @@
 ##upload_squawk_csv.py
+#This script uploads squawk data from a CSV file to Supabase, embedding text using OpenAI's API.
 
 import csv
 import json

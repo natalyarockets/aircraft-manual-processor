@@ -26,8 +26,21 @@ openai_tokenizer = tiktoken.get_encoding("cl100k_base")
 
 
 def load_chunks(path):
-    with open(path, "r") as f:
-        return json.load(f)
+    # Accept a single JSON file or a folder of per-chapter JSON files
+    if os.path.isdir(path):
+        all_chunks = []
+        files = [f for f in os.listdir(path) if f.lower().endswith(".json")]
+        for name in sorted(files):
+            p = os.path.join(path, name)
+            with open(p, "r") as f:
+                all_chunks.extend(json.load(f))
+        print(f"Loaded {len(all_chunks)} chunks from {len(files)} files in {path}")
+        return all_chunks
+    else:
+        with open(path, "r") as f:
+            data = json.load(f)
+        print(f"Loaded {len(data)} chunks from {path}")
+        return data
 
 
 def save_embedded_chunks(chunks, path):
