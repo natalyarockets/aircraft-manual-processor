@@ -8,13 +8,18 @@ load_dotenv()  # This reads from your .env file
 ## For processing and embedding manuals
 # !Set these each time!
 # Aircraft and PDF config
-AIRCRAFT_MODEL = "CJ3"
-PDF_PATH = f"/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Manuals and documentation/CJ3/CJ3 vector store approved and in use/AMM"
-DOCUMENT_TYPE = "AMM"  # You can change this if you want
+AIRCRAFT_MODEL = "MU2"
+PDF_PATH = f"/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Manuals and documentation/MU2/MU2 vector store approved and in use/Maintenance Manual MU-2B-26 YET 74132_searchable.pdf"
+DOCUMENT_TYPE = "maintenance manual"  # "maintenance manual" or "POH" or "training manual"
 
 # Embedding config
-EMBEDDING_PROVIDER = "openai" # or "huggingface" 
-EMBEDDING_MODEL = "text-embedding-3-small" # or "BAAI/bge-base-en-v1.5"
+EMBEDDING_PROVIDER = "huggingface" # "huggingface" or "openai"
+
+if EMBEDDING_PROVIDER == "huggingface":
+    EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"  # Hugging Face model
+else:
+    EMBEDDING_MODEL = "text-embedding-3-small"  # OpenAI model
+
 TABLE_NAME = f"aircraft_manual_{EMBEDDING_MODEL.replace('/', '_').replace('-', '_').replace('.', '_')}".lower()
 
 # Output paths
