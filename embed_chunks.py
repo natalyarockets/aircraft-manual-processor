@@ -6,13 +6,16 @@ from tqdm import tqdm
 from supabase import create_client, Client
 from config import *
 
+import numpy as np
+import os
+
 # OpenAI
 from openai import OpenAI
 import tiktoken
 
 # Hugging Face
-from transformers import AutoTokenizer, AutoModel
-import torch
+from huggingface_hub import InferenceClient
+from huggingface_hub.utils import HfHubHTTPError
 
 # Supabase init
 #print(SUPABASE_VS_URL)
@@ -55,12 +58,11 @@ def embed_with_openai(chunks, model):
     embedded = []
     for chunk in tqdm(chunks):
         try:
-            response = openai_client.embeddings.create(
-                model=model,
-                input=chunk["content"]
-            )
-            embedding = response.data[0].embedding
-            chunk["embedding"] = embedding
+            resp = openai_client.embeddings.create(model=model, input=chunk["content"])
+            v = resp.data[0].embedding
+            # L2 normalize so IP (<#>) ≡ cosine sim and to be consistent with HF
+            a = np.asarray(v, dtype=np.float32); n = np.linalg.norm(a)
+            chunk["embedding"] = (a / n).tolist() if n > 0 else a.tolist()
             chunk["embedding_model"] = model
             embedded.append(chunk)
         except Exception as e:
@@ -68,29 +70,33 @@ def embed_with_openai(chunks, model):
     return embedded
 
 
-def embed_with_huggingface(chunks, model_name):
-    print(f"Embedding with Hugging Face: {model_name}")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name)
-    model.eval().to(device)
+# replace your embed_with_huggingface() with this
 
+def _l2(v): 
+    a = np.asarray(v, dtype=np.float32); n = np.linalg.norm(a)
+    return (a / n).tolist() if n > 0 else a.tolist()
+
+def embed_with_huggingface(chunks, model_name):
+    print(f"Embedding with Hugging Face Inference API: {model_name}")
+    token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+    if not token:
+        raise RuntimeError("Set HUGGINGFACEHUB_API_TOKEN")
+
+    client = InferenceClient(model=model_name, token=token, timeout=60)
     embedded = []
     for chunk in tqdm(chunks):
         try:
-            inputs = tokenizer(chunk["content"], return_tensors="pt", truncation=True, max_length=512)
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-            with torch.no_grad():
-                model_output = model(**inputs)
-                embeddings = model_output.last_hidden_state[:, 0, :]
-                vector = embeddings.squeeze().cpu().numpy().tolist()
-
-            chunk["embedding"] = vector
+            text = "passage: " + chunk["content"]  # BGE instruction
+            vec = client.feature_extraction(text)
+            chunk["embedding"] = _l2(vec)          # normalize for cosine / IP
             chunk["embedding_model"] = model_name
             embedded.append(chunk)
+        except HfHubHTTPError as e:
+            print(f"[HF Error] Page {chunk['page_number']}: {getattr(e.response, 'text', str(e))[:200]}")
         except Exception as e:
             print(f"[HF Error] Page {chunk['page_number']}: {e}")
     return embedded
+
 
 
 def upload_to_supabase(chunks):
