@@ -3,8 +3,10 @@ import re
 import fitz  # PyMuPDF
 import json
 import tiktoken
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
 from config import AIRCRAFT_MODEL, PDF_PATH, RAW_CHUNKS_PATH
+from collections import defaultdict
+
 
 # Optional: enable if/when you want to add LLM cleanup
 USE_LLM_CLEANUP = True
@@ -12,35 +14,85 @@ USE_LLM_CLEANUP = True
 # Tokenizer for OpenAI-style models
 tokenizer = tiktoken.get_encoding("cl100k_base")
 
-def detect_system_category(text: str) -> str:
-    text_lower = text.lower()
-    if re.search(r'(table of contents|contents|toc\b|list of tables|list of figures|illustrations|drawings|schematic|wiring diagram)', text_lower):
-        return "Non-Content"
-    elif re.search(r'hydraulic|actuator|fluid|pressure|reservoir|pump|valve|cylinder', text_lower):
-        return "Hydraulic"
-    elif re.search(r'electric|circuit|voltage|wire|battery|generator|power|bus|breaker', text_lower):
-        return "Electrical"
-    elif re.search(r'avionic|instrument|display|navigation|communication|radar|computer|software', text_lower):
-        return "Avionics"
-    elif re.search(r'engine|thrust|power|fuel|combustion|turbine|compressor|exhaust|ignition', text_lower):
-        return "Powerplant"
-    elif re.search(r'landing|gear|wheel|brake|tire|strut|shock|nose gear|extend|retract', text_lower):
-        return "Landing Gear"
-    elif re.search(r'inspect|check|maintenance|interval|schedule|service|lubricate|procedure', text_lower):
-        return "Maintenance"
-    elif re.search(r'fuel|tank|pump|valve|selector|quantity|indicator|flow|consumption', text_lower):
-        return "Fuel System"
-    elif re.search(r'environmental|air|conditioning|pressurization|temperature|ventilation|oxygen', text_lower):
-        return "Environmental"
-    elif re.search(r'flight control|aileron|elevator|rudder|flap|spoiler|trim|autopilot', text_lower):
-        return "Flight Controls"
-    elif re.search(r'emergency|procedure|warning|caution|danger|abnormal|failure|malfunction', text_lower):
-        return "Emergency Procedures"
-    elif re.search(r'limitation|performance|weight|balance|loading|center of gravity|cg', text_lower):
-        return "Limitations"
-    elif re.search(r'operational|normal|procedure|checklist|preflight|postflight', text_lower):
-        return "Operating Procedures"
-    return "General"
+# --- categorization config ---
+_CAT_PATTERNS = {
+    "Non-Content": [
+        (re.compile(r"\b(table of contents|contents|toc|list of (tables|figures)|illustrations?|drawings?|schematics?)\b", re.I), 3.0),
+    ],
+    "Hydraulic": [
+        (re.compile(r"\bhydraul\w+\b", re.I), 3.0),
+        (re.compile(r"\b(actuator|reservoir|accumulator|servo|pressure|relief valve|hyd\.? pump)\b", re.I), 1.5),
+    ],
+    "Electrical": [
+        (re.compile(r"\belectrical?( system)?\b", re.I), 3.0),
+        (re.compile(r"\b(circuit(s)?|voltage|current|battery|generator|alternator|bus(bar)?|breaker|inverter)\b", re.I), 1.5),
+    ],
+    "Avionics": [
+        (re.compile(r"\b(avionics?|navigation|communication|radar|(fms|gps)\b|display|computer)\b", re.I), 1.5),
+        (re.compile(r"\bflight director\b", re.I), 3.0),
+    ],
+    "Powerplant": [
+        (re.compile(r"\b(powerplant|engine(s)?|turbine|compressor|combustion|exhaust|ignition|propeller)\b", re.I), 2.0),
+        (re.compile(r"\b(n1|n2|egt|itt|torque)\b", re.I), 1.2),
+    ],
+    "Landing Gear": [
+        (re.compile(r"\blanding gear\b", re.I), 3.0),
+        (re.compile(r"\b(strut|shock|brake(s)?|wheel(s)?|tire(s)?|nose gear|extend|retract)\b", re.I), 1.5),
+    ],
+    "Maintenance": [
+        (re.compile(r"\b(troubleshooting|inspection|intervals?|schedule|service|lubricat(e|ion)|maintenance)\b", re.I), 1.5),
+        (re.compile(r"\b(removal and installation|R&I|install(ation)?|remove)\b", re.I), 1.5),
+    ],
+    "Fuel System": [
+        (re.compile(r"\bfuel system\b", re.I), 3.0),
+        (re.compile(r"\b(fuel (tank|selector|quantity|indicator|flow)|boost pump|unfeather pump)\b", re.I), 1.8),
+    ],
+    "Environmental": [
+        (re.compile(r"\b(air conditioning|pressurization|bleed air|ventilation|temperature control|oxygen)\b", re.I), 2.0),
+    ],
+    "Flight Controls": [
+        (re.compile(r"\b(flight control|aileron|elevator|rudder|flap|spoiler|trim)\b", re.I), 1.8),
+        (re.compile(r"\b(autopilot|yaw damper)\b", re.I), 2.2),
+    ],
+    "Emergency Procedures": [
+        (re.compile(r"\b(emergency procedures?|abnormal|warning(s)?|caution(s)?)\b", re.I), 1.5),
+    ],
+    "Limitations": [
+        (re.compile(r"\b(limitations?|operating limits?|weight and balance|center of gravity|c\.?g\.?)\b", re.I), 1.8),
+    ],
+    "Operating Procedures": [
+        (re.compile(r"\b(normal procedures?|operational procedures?|checklist|preflight|postflight|start(ing)?|shutdown)\b", re.I), 1.5),
+    ],
+}
+
+_TITLE_WEIGHT = 3.0
+_TEXT_WEIGHT  = 1.0
+_MIN_SCORE    = 2.0
+
+
+def detect_system_category(text: str, title: Optional[str] = None, topk: int = 1):
+    """
+    Count weighted keyword/phrase hits across categories in both title and body.
+    Returns the top category (or top-k list) based on scores.
+    """
+    scores = defaultdict(float)
+    body = text or ""
+    hdr  = title or ""
+
+    for cat, pats in _CAT_PATTERNS.items():
+        for pat, w in pats:
+            if hdr:
+                scores[cat] += _TITLE_WEIGHT * w * len(pat.findall(hdr))
+            scores[cat] += _TEXT_WEIGHT * w * len(pat.findall(body))
+
+    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    if not ranked or ranked[0][1] < _MIN_SCORE:
+        return "General"
+
+    if topk == 1:
+        return ranked[0][0]
+    return [c for c, _ in ranked[:topk]]
+
 
 def extract_text_from_pdf(pdf_path: str) -> List[Dict]:
     print(f"Extracting text from: {pdf_path}")
@@ -85,7 +137,7 @@ def chunk_text(pages_text: List[Dict], pdf_basename: str, chunk_size: int = 600,
             if title_match:
                 section_title = title_match.group(1).strip()
 
-            system_category = detect_system_category(chunk_text)
+            system_category = detect_system_category(chunk_text, title=section_title, topk=1)
 
             chunks.append({
                 "content": chunk_text,
