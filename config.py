@@ -8,9 +8,9 @@ load_dotenv()  # This reads from your .env file
 ## For processing and embedding manuals
 # !Set these each time!
 # Aircraft and PDF config
-AIRCRAFT_MODEL = "MU2"
-PDF_PATH = f"/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Manuals and documentation/MU2/MU2 vector store approved and in use/Mitsubishi MU-2 J-K-L-M Manual.pdf"
-DOCUMENT_TYPE = "training manual"  # "maintenance manual" or "POH" or "training manual"
+AIRCRAFT_MODEL = "DA42"
+PDF_PATH = f"/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Manuals and documentation/DA42/DA42 vector store approved and in use/DA42-NG-AFM.pdf"
+DOCUMENT_TYPE = "AFM"  # "maintenance manual" or "POH" or "training manual" or "AFM" or "operating manual" or "specs"
 
 # Embedding config
 EMBEDDING_PROVIDER = "openai" # "huggingface" or "openai"

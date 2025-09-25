@@ -11,8 +11,8 @@ from config import OPENAI_API_KEY, SUPABASE_VS_URL, SUPABASE_VS_KEY
 # Config
 openai.api_key = OPENAI_API_KEY
 supabase = create_client(SUPABASE_VS_URL, SUPABASE_VS_KEY)
-TABLE_NAME = "squawk_text_embedding_3_small"
-CSV_FILE = "/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Customer data/Pacific Coast Jets/Analytics Aircraft Discrepancies gm1.csv"  # path to your CSV file
+TABLE_NAME = "squawk_text_embedding_3_small_demo"
+CSV_FILE = "/Users/n/Library/CloudStorage/GoogleDrive-natalya@bettersquawk.com/Shared drives/Engineering/Customer data/demo data/Analytics_Aircraft_Discrepancies_MOCK_v3.csv"  # path to your CSV file
 
 def embed_text(text: str) -> list[float]:
     response = openai.embeddings.create(
@@ -46,7 +46,7 @@ def load_and_upload():
 
             record = {
                 "discrepancy_id": row.get("Discrepancy ID"),
-                "org": "pcj",  # Replace or pass dynamically
+                "org": "squawk",  # Replace or pass dynamically
                 "tail_number": row.get("Aircraft"),
                 "aircraft_type": row.get("Aircraft Serial"),
                 "aircraft": row.get("Aircraft"),
